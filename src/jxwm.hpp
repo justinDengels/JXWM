@@ -63,6 +63,7 @@ private:
     std::array<std::vector<Client>, 9> Clients;
     Client* GetClientFromWindow(Window w);
     void RemoveClient(Client* c);
+    int GetClientTag(Client* c);
 
     void GetExistingWindows();
 
@@ -116,6 +117,7 @@ private:
     Atom NET_CURRENT_DESKTOP;
     Atom NET_CLOSE_WINDOW;
     Atom NET_WM_STRUT_PARTIAL;
+    Atom NET_WM_STATE;
     //Should I make these in an array?
     bool IsPager(Window w, Strut& strutsRet);
     void UpdateStruts(Strut& struts);

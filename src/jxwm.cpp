@@ -72,6 +72,7 @@ void JXWM::GetAtoms()
     NET_CLOSE_WINDOW = XInternAtom(disp, "_NET_CLOSE_WINDOW", false);
     NET_SUPPORTED = XInternAtom(disp, "_NET_SUPPORTED", false);
     NET_WM_STRUT_PARTIAL = XInternAtom(disp, "_NET_WM_STRUT_PARTIAL", false);
+    NET_WM_STATE = XInternAtom(disp, "_NET_WM_STATE", false);
 
     NET_NUMBER_OF_DESKTOPS = XInternAtom(disp, "_NET_NUMBER_OF_DESKTOPS", false);
     XChangeProperty(disp, root, NET_NUMBER_OF_DESKTOPS, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
@@ -79,10 +80,11 @@ void JXWM::GetAtoms()
     NET_CURRENT_DESKTOP = XInternAtom(disp, "_NET_CURRENT_DESKTOP", false);
     XChangeProperty(disp, root, NET_CURRENT_DESKTOP, XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
 
+
     //TODO: NET_DESKTOP_NAMES
 
 
-    Atom atoms[] = { WM_PROTOCOLS, WM_DELETE_WINDOW, NET_ACTIVE_WINDOW, NET_CLOSE_WINDOW, NET_SUPPORTED, NET_NUMBER_OF_DESKTOPS, NET_CURRENT_DESKTOP, NET_WM_STRUT_PARTIAL };
+    Atom atoms[] = { WM_PROTOCOLS, WM_DELETE_WINDOW, NET_ACTIVE_WINDOW, NET_CLOSE_WINDOW, NET_SUPPORTED, NET_NUMBER_OF_DESKTOPS, NET_CURRENT_DESKTOP, NET_WM_STRUT_PARTIAL, NET_WM_STATE };
     XChangeProperty(disp, root, NET_SUPPORTED, XA_ATOM, 32, PropModeReplace, (unsigned char *)atoms, sizeof(atoms) / sizeof(Atom));
 }
 
@@ -209,8 +211,13 @@ void JXWM::OnMapRequest(const XEvent& e)
     Client* c = GetClientFromWindow(w);
     if (c != nullptr)
     {
-        XMapWindow(disp, c->window);
-        Arrange();
+        int cTag = GetClientTag(c);
+        if (currentTag != cTag) { ChangeTag(cTag); }
+        else 
+        {
+            XMapWindow(disp, c->window);
+            Arrange();
+        }
         return;
     }
 
@@ -358,6 +365,15 @@ void JXWM::OnClientMessage(const XEvent& e)
         logger.Log(INFO, "Got client message to kill a window, attempting to kill it");
         Client* c = GetClientFromWindow(xcme.window);
         KillWindow(c);
+    }
+    else if (xcme.message_type == NET_WM_STATE)
+    {
+        long action = xcme.data.l[0];
+        Atom prop1 = xcme.data.l[1];
+        //Atom prop2 = xcme.data.l[2];
+        logger.Log(DEBUG, "_NET_WM_STATE:\nAction: " + std::to_string(action) + "\nAtom1: "
+                + std::string(XGetAtomName(disp, prop1))); //+ "\nAtom2: " + 
+                //std::string(XGetAtomName(disp, prop2)));
     }
     else
     {
@@ -586,3 +602,15 @@ void JXWM::MoveClient(Client* c, int amount)
 }
 
 void JXWM::Logout(arg* arg) { Spawn("pkill -KILL -u $USER"); }
+
+int JXWM::GetClientTag(Client* c) 
+{
+    for (int i = 0; i < Clients.size(); i++)
+    {
+        for (auto client : Clients[i])
+        {
+            if (client.window == c->window) { return i; }
+        }
+    }
+    return -1;
+}
