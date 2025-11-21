@@ -1,0 +1,86 @@
+#include "jxwm.hpp"
+#include <X11/X.h>
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <string.h>
+
+unsigned int super = Mod4Mask;
+
+unsigned int stringToMod(std::string mod)
+{
+    if (mod == "super") { return super; }
+    if (mod == "windows") { return Mod4Mask; }
+    if (mod == "shift") { return ShiftMask; }
+    if (mod == "lock") { return LockMask; }
+    if (mod == "ctrl") { return ControlMask; }
+
+    return Mod4Mask;
+}
+
+void JXWM::ReadConfigFile(const std::string& configFile)
+{
+    std::cout << "Reading file " << configFile << "..." << std::endl;
+    std::ifstream file(configFile);
+    if (!file.is_open())
+    {
+        std::cout << "Could not open config file " << configFile << std::endl;
+        return;
+    }
+
+    std::string line;
+    std::vector<std::string> argsToSpawn;
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        std::string item;
+        char delimiter = ',';
+        std::vector<std::string> split;
+        while (std::getline(ss, item, delimiter)) { split.push_back(item); }
+        if (split.empty()) { continue; }
+        if (split[0] == "run")
+        {
+            argsToSpawn.push_back(split[1]);
+        }
+        else if(split[0] == "kb")
+        {
+            if (split[3] == "spawn")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::Spawn, {.spawn = strdup(split[4].c_str())}});
+            }
+            else if (split[3] == "killwindow")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::KillWindow, nullptr});
+            }
+            else if (split[3] == "quit")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::Quit, nullptr});
+            }
+            else if (split[3] == "logout")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::Logout, nullptr});
+            }
+            else if(split[3] == "reload")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::ReloadConfig, nullptr});
+            }
+            else if (split[3] == "move_left")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::MoveClientLeft, nullptr});
+            }
+            else if (split[3] == "move_right")
+            {
+                keybindings.push_back({stringToMod(split[1]), XStringToKeysym(split[2].c_str()), &JXWM::MoveClientRight, nullptr});
+            }
+        }
+        else if ( split[0] == "set")
+        {
+            if (split[1] == "bw") { borderWidth = std::stoi(split[2]); }
+
+            else if (split[1] == "super") { super = stringToMod(split[2]); }
+        }
+    }
+
+    for (auto cmd : argsToSpawn) { Spawn(cmd.c_str()); }
+    Arrange();
+}
