@@ -1,5 +1,6 @@
 #pragma once
 
+#include "logger.hpp"
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <vector>
@@ -42,6 +43,7 @@ public:
     void Run();
 
 private:
+    Logger logger;
     Window root;
     Display* disp;
     int screenum;

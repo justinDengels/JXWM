@@ -20,11 +20,11 @@ unsigned int stringToMod(std::string mod)
 
 void JXWM::ReadConfigFile(const std::string& configFile)
 {
-    std::cout << "Reading file " << configFile << "..." << std::endl;
+    logger.Log(INFO, "Reading file " + configFile + "...");
     std::ifstream file(configFile);
     if (!file.is_open())
     {
-        std::cout << "Could not open config file " << configFile << std::endl;
+        logger.Log(ERROR, "Could not open config file " + configFile);
         return;
     }
 
