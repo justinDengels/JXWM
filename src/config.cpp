@@ -1,15 +1,17 @@
 #include "jxwm.hpp"
 #include <X11/X.h>
-#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string.h>
+#include <X11/XF86keysym.h>
 
 unsigned int super = Mod4Mask;
+unsigned int NOMASK = 0;
 
-unsigned int stringToMod(std::string mod)
+unsigned int stringToMod(const std::string& mod)
 {
     if (mod == "super") { return super; }
+    if (mod == "None") { return NOMASK; }
     if (mod == "windows") { return Mod4Mask; }
     if (mod == "shift") { return ShiftMask; }
     if (mod == "lock") { return LockMask; }
@@ -75,7 +77,28 @@ void JXWM::ReadConfigFile(const std::string& configFile)
         }
         else if ( split[0] == "set")
         {
-            if (split[1] == "bw") { borderWidth = std::stoi(split[2]); }
+            if (split[1] == "bw") { settings.borderWidth = std::stoi(split[2]); }
+
+            else if (split[1] == "switchonopen")
+            {
+                if (split[2] == "true") { settings.switchOnOpen = true; }
+                else { settings.switchOnOpen = false; }
+            }
+
+            else if (split[1] == "switchonmove")
+            {
+                if (split[2] == "true") { settings.switchOnMove = true; }
+                else { settings.switchOnMove = false; }
+            }
+
+            else if (split[1] == "verbose")
+            {
+                if (split[2] == "on") { logger.verbose = true; }
+                else { logger.verbose = false; }
+            }
+
+            else if (split[1] == "fbordercolor") { settings.focusedBorderColor = std::stoul(split[2], nullptr, 16); }
+            else if (split[1] == "ubordercolor") { settings.unfocusedBorderColor = std::stoul(split[2], nullptr, 16); }
 
             else if (split[1] == "super") { super = stringToMod(split[2]); }
         }

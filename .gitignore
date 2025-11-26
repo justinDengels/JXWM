@@ -1,3 +1,5 @@
 jxwm
 .vscode/
-
+run.sh
+jxwm.log
+xinitrc

@@ -12,6 +12,8 @@ class Logger
 
         void Log(LogLevel lvl, const std::string& msg);
 
+        bool verbose;
+
     private:
         std::ofstream logFile;
 };

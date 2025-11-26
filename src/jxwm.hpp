@@ -7,10 +7,7 @@
 #include <array>
 #include <string>
 
-typedef struct Client
-{
-    Window window;
-} Client;
+
 
 typedef struct
 {
@@ -19,6 +16,13 @@ typedef struct
     uint w;
     uint h;
 } Rect;
+
+typedef struct Client
+{
+    Window window;
+    bool isFullScreen;
+    Rect og;
+} Client;
 
 typedef struct
 {
@@ -34,6 +38,15 @@ typedef union
     int tag;
 } arg;
 
+typedef struct 
+{
+    int borderWidth;
+    unsigned int focusedBorderColor;
+    unsigned int unfocusedBorderColor;
+    bool switchOnOpen;
+    bool switchOnMove;
+} Settings;
+
 class JXWM
 {
 public:
@@ -47,7 +60,7 @@ private:
     Window root;
     Display* disp;
     int screenum;
-    int borderWidth;
+    Settings settings; 
     Rect screenArea;
     Rect usableArea;
     static bool otherWM;
@@ -108,17 +121,25 @@ private:
     void MoveClient(Client* c, int amount);
 
     void FocusClient(Client* c);
-    Window AttemptToGetFocusedWindow(); //Probably useless
-    Atom WM_DELETE_WINDOW;
-    Atom WM_PROTOCOLS;
-    Atom NET_SUPPORTED;
-    Atom NET_ACTIVE_WINDOW;
-    Atom NET_NUMBER_OF_DESKTOPS;
-    Atom NET_CURRENT_DESKTOP;
-    Atom NET_CLOSE_WINDOW;
-    Atom NET_WM_STRUT_PARTIAL;
-    Atom NET_WM_STATE;
-    //Should I make these in an array?
+    void FullscreenClient(Client* c, bool toggle);
+
+    enum 
+    { 
+        WM_DELETE_WINDOW, 
+        WM_PROTOCOLS, 
+        NET_SUPPORTED, 
+        NET_ACTIVE_WINDOW, 
+        NET_NUMBER_OF_DESKTOPS, 
+        NET_CURRENT_DESKTOP, 
+        NET_CLOSE_WINDOW, 
+        NET_WM_STRUT_PARTIAL, 
+        NET_WM_STATE,
+        NET_WM_STATE_FULLSCREEN,
+        NUM_ATOMS
+    };
+
+    Atom atoms[NUM_ATOMS];
+
     bool IsPager(Window w, Strut& strutsRet);
     void UpdateStruts(Strut& struts);
     void Arrange();

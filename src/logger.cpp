@@ -3,14 +3,14 @@
 #include <iostream>
 #include <sstream>
 
-static char* levels[] =
+static const char* levels[] =
 {
     "DEBUG",
     "INFO",
     "ERROR"
 };
 
-char* LevelToString(LogLevel lvl) { return levels[lvl]; }
+const char* LevelToString(LogLevel lvl) { return levels[lvl]; }
 
 Logger::Logger(const std::string& fileName)
 {
@@ -25,6 +25,7 @@ Logger::~Logger() { logFile.close(); }
 
 void Logger::Log(LogLevel lvl, const std::string& msg)
 {
+    if (lvl == DEBUG && !verbose) { return; }
     time_t now = time(0);
     tm* timeinfo = localtime(&now);
     char timestamp[20];
