@@ -2,19 +2,21 @@
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
+#include <X11/Xatom.h>
 #include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <unistd.h>
 #include <string.h>
-#include <X11/Xatom.h>
 #include <vector>
 #include <sstream>
 #include <algorithm>
 
-#define PRINTHERE std::cout << __LINE__ << std::endl;
+//#define PRINTHERE std::cout << __LINE__ << std::endl;
+#define PRINTHERE logger.Log(DEBUG, std::to_string(__LINE__));
 bool JXWM::otherWM = false;
+
 
 JXWM::JXWM()
     : disp(nullptr), focused(nullptr), currentTag(0), tags(9), logger("jxwm.log")
@@ -38,7 +40,7 @@ int JXWM::Init()
 
     root = DefaultRootWindow(disp);
     XSetErrorHandler(&OnOtherWMDetected);
-    long rootMask = SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask;
+    long rootMask = SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask | PropertyChangeMask;
     XSelectInput(disp, root, rootMask);
     SetWindowLayout(&JXWM::MasterStack);
     GetAtoms();
@@ -66,26 +68,35 @@ int JXWM::Init()
 
 void JXWM::GetAtoms()
 {
-    atoms[WM_PROTOCOLS] = XInternAtom(disp, "WM_PROTOCOLS", false);
-    atoms[WM_DELETE_WINDOW] = XInternAtom(disp, "WM_DELETE_WINDOW", false);
-    atoms[NET_ACTIVE_WINDOW] = XInternAtom(disp, "_NET_ACTIVE_WINDOW", false);
-    atoms[NET_CLOSE_WINDOW] = XInternAtom(disp, "_NET_CLOSE_WINDOW", false);
-    atoms[NET_SUPPORTED] = XInternAtom(disp, "_NET_SUPPORTED", false);
-    atoms[NET_WM_STRUT_PARTIAL] = XInternAtom(disp, "_NET_WM_STRUT_PARTIAL", false);
-    atoms[NET_WM_STATE] = XInternAtom(disp, "_NET_WM_STATE", false);
-    atoms[NET_WM_STATE_FULLSCREEN] = XInternAtom(disp, "_NET_WM_STATE_FULLSCREEN", false);
+    wmAtoms[WM_PROTOCOLS] = XInternAtom(disp, "WM_PROTOCOLS", false);
+    wmAtoms[WM_DELETE_WINDOW] = XInternAtom(disp, "WM_DELETE_WINDOW", false);
+    wmAtoms[WM_STATE] = XInternAtom(disp, "WM_STATE", false);
+    wmAtoms[UTF8_STRING] = XInternAtom(disp, "UTF8_STRING", false);
+    netAtoms[NET_ACTIVE_WINDOW] = XInternAtom(disp, "_NET_ACTIVE_WINDOW", false);
+    netAtoms[NET_CLOSE_WINDOW] = XInternAtom(disp, "_NET_CLOSE_WINDOW", false);
+    netAtoms[NET_SUPPORTED] = XInternAtom(disp, "_NET_SUPPORTED", false);
+    netAtoms[NET_CLIENT_LIST] = XInternAtom(disp, "_NET_CLIENT_LIST", false);
+    netAtoms[NET_WM_STRUT_PARTIAL] = XInternAtom(disp, "_NET_WM_STRUT_PARTIAL", false);
+    netAtoms[NET_WM_STATE] = XInternAtom(disp, "_NET_WM_STATE", false);
+    netAtoms[NET_WM_STATE_FULLSCREEN] = XInternAtom(disp, "_NET_WM_STATE_FULLSCREEN", false);
+    netAtoms[NET_SUPPORTING_WM_CHECK] = XInternAtom(disp, "_NET_SUPPORTING_WM_CHECK", false);
+    netAtoms[NET_WM_NAME] = XInternAtom(disp, "_NET_WM_NAME", false);
 
-    atoms[NET_NUMBER_OF_DESKTOPS] = XInternAtom(disp, "_NET_NUMBER_OF_DESKTOPS", false);
-    XChangeProperty(disp, root, atoms[NET_NUMBER_OF_DESKTOPS], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
+    netAtoms[NET_NUMBER_OF_DESKTOPS] = XInternAtom(disp, "_NET_NUMBER_OF_DESKTOPS", false);
+    XChangeProperty(disp, root, netAtoms[NET_NUMBER_OF_DESKTOPS], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
 
-    atoms[NET_CURRENT_DESKTOP] = XInternAtom(disp, "_NET_CURRENT_DESKTOP", false);
-    XChangeProperty(disp, root, atoms[NET_CURRENT_DESKTOP], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
+    netAtoms[NET_CURRENT_DESKTOP] = XInternAtom(disp, "_NET_CURRENT_DESKTOP", false);
+    XChangeProperty(disp, root, netAtoms[NET_CURRENT_DESKTOP], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
 
+    wmCheck = XCreateSimpleWindow(disp, root, 0, 0, 1, 1, 0, 0, 0);
 
-    //TODO: NET_DESKTOP_NAMES
+    XChangeProperty(disp, root, netAtoms[NET_SUPPORTING_WM_CHECK], XA_WINDOW, 32, PropModeReplace, (unsigned char*)&wmCheck, 1);
+    XChangeProperty(disp, wmCheck, netAtoms[NET_SUPPORTING_WM_CHECK], XA_WINDOW, 32, PropModeReplace, (unsigned char*)&wmCheck, 1);
 
+    const char* name = "jxwm";
+    XChangeProperty(disp, wmCheck, netAtoms[NET_WM_NAME], wmAtoms[UTF8_STRING], 8, PropModeReplace, (unsigned char*)name, strlen(name));
 
-    XChangeProperty(disp, root, atoms[NET_SUPPORTED], XA_ATOM, 32, PropModeReplace, (unsigned char *)atoms, sizeof(atoms) / sizeof(Atom));
+    XChangeProperty(disp, root, netAtoms[NET_SUPPORTED], XA_ATOM, 32, PropModeReplace, (unsigned char *)netAtoms, sizeof(netAtoms) / sizeof(Atom));
 }
 
 void JXWM::GetExistingWindows()
@@ -94,7 +105,10 @@ void JXWM::GetExistingWindows()
     Window rootr, pReturn, *children;
     uint nChildren;
     XQueryTree(disp, root, &rootr, &pReturn, &children, &nChildren);
-    for (uint i = 0; i < nChildren; i++) { Clients[currentTag].push_back({children[i]}); }
+    for (uint i = 0; i < nChildren; i++) 
+    {  
+        if (children[i] != wmCheck) { Clients[currentTag].push_back({children[i]}); } 
+    }
     XUngrabServer(disp);
     XFree(children);
     Arrange();
@@ -113,7 +127,7 @@ void JXWM::Run()
 
 int JXWM::OnOtherWMDetected(Display* disp, XErrorEvent* xee)
 {
-    otherWM = true;
+    if ((int)xee->error_code == BadAccess) { otherWM = true; }
     return 0;
 }
 
@@ -137,8 +151,8 @@ void JXWM::GrabKeys()
     //first, grab tag keybindings
     for (int i = 0; i < 9; i++)
     {
-        keybindings.push_back({Mod4Mask | ShiftMask, XK_1 + i, &JXWM::ChangeClientTag, {.tag = i}});
-        keybindings.push_back({Mod4Mask, XK_1 + i, &JXWM::ChangeTag, {.tag = i}});
+        keybindings.push_back({Mod4Mask | ShiftMask, XK_1 + (KeySym)i, &JXWM::ChangeClientTag, {.tag = i}});
+        keybindings.push_back({Mod4Mask, XK_1 + (KeySym)i, &JXWM::ChangeTag, {.tag = i}});
     }
 
     for (auto kb: keybindings)
@@ -157,7 +171,9 @@ void JXWM::GrabHandlers()
     handlers[ClientMessage] = &JXWM::OnClientMessage;
     handlers[DestroyNotify] = &JXWM::OnDestroyNotify;
     handlers[EnterNotify] = &JXWM::OnWindowEnter;
+    handlers[LeaveNotify] = &JXWM::OnWindowLeave;
     handlers[CreateNotify] = &JXWM::OnCreateNotify;
+    handlers[PropertyNotify] = &JXWM::OnPropertyNotify;
 }
 
 static const char* eventNames[] =
@@ -206,7 +222,6 @@ const char* JXWM::EventToString(int event)
 
 void JXWM::OnMapRequest(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnMapRequest");
     Window w = e.xmaprequest.window;
     Client* c = GetClientFromWindow(w);
     if (c != nullptr)
@@ -246,15 +261,21 @@ void JXWM::OnMapRequest(const XEvent& e)
     }
 
     XMapWindow(disp, w);
-    XSelectInput(disp, w, EnterWindowMask | LeaveWindowMask);
-    Clients[currentTag].push_back({w});
-    FocusClient(GetClientFromWindow(w));
+    XSelectInput(disp, w, EnterWindowMask | LeaveWindowMask | PropertyChangeMask);
+    XSetWindowBorderWidth(disp, w, settings.borderWidth);
+    Client newc;
+    newc.window  = w;
+    Status ok = XFetchName(disp, w, &newc.title);
+    if (!ok) { newc.title = (char*)"NULL"; }
+    newc.isFullScreen = False;
+    Clients[currentTag].push_back(newc);
+    FocusClient(&newc);
     Arrange();
+    UpdateClientList();
 }
 
 void JXWM::OnConfigureRequest(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnConfigureRequest");
     XConfigureRequestEvent xcre = e.xconfigurerequest;
     XWindowChanges xwc;
     xwc.x = xcre.x;
@@ -269,7 +290,6 @@ void JXWM::OnConfigureRequest(const XEvent& e)
 
 void JXWM::OnKeyPress(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnKeyPress");
     XKeyEvent xke = e.xkey;
 
     for (auto kb: keybindings)
@@ -285,7 +305,7 @@ void JXWM::Spawn(arg* arg) { Spawn(arg->spawn); }
 
 void JXWM::Spawn(const char* spawn)
 {
-    logger.Log(DEBUG, "In Spawn function\nSpawning: " + std::string(spawn));
+    logger.Log(DEBUG, "In Spawn function");
     if (fork() == 0)
     {
         if (disp) { close(ConnectionNumber(disp)); }
@@ -299,26 +319,23 @@ void JXWM::KillWindow(arg* arg) { KillWindow(focused); }
 
 void JXWM::KillWindow(Client* c)
 {
-    logger.Log(DEBUG, "In KillWindow function");
-
+    logger.Log(DEBUG, "In KillWindow Function");
     if (c == nullptr) { return; }
-
-    if (WindowHasAtom(c->window, atoms[WM_DELETE_WINDOW]))
+    if (WindowHasAtom(c->window, wmAtoms[WM_DELETE_WINDOW]))
     {
         XEvent killEvent;
         memset(&killEvent, 0, sizeof(killEvent));
         killEvent.xclient.type = ClientMessage;
         killEvent.xclient.window = c->window;
-        killEvent.xclient.message_type = atoms[WM_PROTOCOLS];
+        killEvent.xclient.message_type = wmAtoms[WM_PROTOCOLS];
         killEvent.xclient.format = 32;
-        killEvent.xclient.data.l[0] = atoms[WM_DELETE_WINDOW];
+        killEvent.xclient.data.l[0] = wmAtoms[WM_DELETE_WINDOW];
         killEvent.xclient.data.l[1] = CurrentTime;
         XSendEvent(disp, c->window, False, NoEventMask, &killEvent);
         RemoveClient(c);
         Arrange();
         return;
     }
-
     logger.Log(ERROR, "Could not get delete window atom");
     XKillClient(disp, c->window);
     RemoveClient(c);
@@ -337,65 +354,65 @@ bool JXWM::WindowHasAtom(Window w, Atom atom)
             if (retAtoms[i] == atom)
             {
                 XFree(retAtoms);
-                return true;
+                return True;
             }
         }
+        XFree(retAtoms);
     }
-
-    XFree(retAtoms);
     return false;
 }
 
 
 void JXWM::OnClientMessage(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnClientMessage function");
     XClientMessageEvent xcme = e.xclient;
-    if (xcme.message_type == atoms[NET_NUMBER_OF_DESKTOPS])
+
+    Client* c = GetClientFromWindow(xcme.window);
+    std::string title = (!c) ? "UNKNOWN CLIENT" : std::string(c->title);
+logger.Log(INFO, "Got client message " + std::string(XGetAtomName(disp, xcme.message_type)) + " from client " + title); 
+    if (xcme.message_type == netAtoms[NET_NUMBER_OF_DESKTOPS])
     {
         tags = (int)xcme.data.l[0];
-        XChangeProperty(disp, root, atoms[NET_NUMBER_OF_DESKTOPS], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
+        XChangeProperty(disp, root, netAtoms[NET_NUMBER_OF_DESKTOPS], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&tags, 1);
         logger.Log(INFO, "Got client message to change number of virtual desktops to " + std::to_string(tags));
     }
-    else if (xcme.message_type == atoms[NET_CURRENT_DESKTOP])
+    else if (xcme.message_type == netAtoms[NET_CURRENT_DESKTOP])
     {
         int clientTag = (int)xcme.data.l[0];
-        XChangeProperty(disp, root, atoms[NET_CURRENT_DESKTOP], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&clientTag, 1);
+        XChangeProperty(disp, root, netAtoms[NET_CURRENT_DESKTOP], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&clientTag, 1);
         logger.Log(INFO, "Got client message to change current tag to tag " + std::to_string(currentTag));
         ChangeTag(clientTag);
     }
-    else if (xcme.message_type == atoms[NET_CLOSE_WINDOW])
+    else if (xcme.message_type == netAtoms[NET_CLOSE_WINDOW])
     {
         logger.Log(INFO, "Got client message to kill a window, attempting to kill it");
         Client* c = GetClientFromWindow(xcme.window);
         KillWindow(c);
     }
-    else if (xcme.message_type == atoms[NET_WM_STATE])
+    else if (xcme.message_type == netAtoms[NET_WM_STATE])
     {
         long action = xcme.data.l[0];
         Atom prop1 = xcme.data.l[1];
         //Atom prop2 = xcme.data.l[2];
-        logger.Log(DEBUG, "_NET_WM_STATE:\nAction: " + std::to_string(action) + "\nAtom1: "
+        logger.Log(INFO,"Window: " /*+ title +*/ "\n_NET_WM_STATE:\nAction: " + std::to_string(action) + "\nAtom1: "
                 + std::string(XGetAtomName(disp, prop1))); //+ "\nAtom2: " + 
                 //std::string(XGetAtomName(disp, prop2)));
-        if (prop1 == NET_WM_STATE_FULLSCREEN)
+        if (prop1 == netAtoms[NET_WM_STATE_FULLSCREEN])
         {
-            Client* c = GetClientFromWindow(xcme.window);
             if (!c) { return; }
             if (action == 0) { FullscreenClient(c, false); }
-            if (action == 1) { FullscreenClient(c, true); }
-            if (action == 2) { FullscreenClient(c, !c->isFullScreen); }
+            else if (action == 1) { FullscreenClient(c, true); }
+            else if (action == 2) { FullscreenClient(c, !c->isFullScreen); }
         }
     }
-    else
+    else if (xcme.message_type == netAtoms[NET_ACTIVE_WINDOW])
     {
-        logger.Log(INFO, "Got unknonw client message " + std::string(XGetAtomName(disp, xcme.message_type)));     
+        if (c != nullptr) { FocusClient(c); }
     }
 }
 
 void JXWM::OnDestroyNotify(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnDestroyNotify");
     XDestroyWindowEvent xdwe = e.xdestroywindow;
     Client* c = GetClientFromWindow(xdwe.window);
     if (c == nullptr) { return; }
@@ -404,16 +421,13 @@ void JXWM::OnDestroyNotify(const XEvent& e)
 
 void JXWM::FocusClient(Client* c)
 {
-    if (c == nullptr) { return; }
-    //unsigned long FBG_COLOR = 0x0000ff;
-    //unsigned long UBG_COLOR = 0xff0000;
-    XSetWindowBorderWidth(disp, c->window, settings.borderWidth);
+    if (c == nullptr || c == focused) { return; }
     if (focused != nullptr) { XSetWindowBorder(disp, focused->window, settings.unfocusedBorderColor); }
     focused = c;
-    XSetWindowBorder(disp, focused->window, settings.focusedBorderColor);
+    XSetWindowBorder(disp, c->window, settings.focusedBorderColor);
     XSetInputFocus(disp, c->window, RevertToPointerRoot, CurrentTime);
     XRaiseWindow(disp, c->window);
-    XChangeProperty(disp, root, atoms[NET_ACTIVE_WINDOW], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&c->window, 1);
+    XChangeProperty(disp, root, netAtoms[NET_ACTIVE_WINDOW], XA_WINDOW, 32, PropModeReplace, (unsigned char *)&c->window, 1);
 }
 
 Client* JXWM::GetClientFromWindow(Window w)
@@ -441,6 +455,7 @@ void JXWM::RemoveClient(Client* c)
                 if (c->window == focused->window) { focused = nullptr; }
                 Clients[i].erase(it);
                 Arrange();
+                UpdateClientList();
                 return;
             }
         }
@@ -450,22 +465,27 @@ void JXWM::RemoveClient(Client* c)
 
 void JXWM::MasterStack()
 {
-    logger.Log(DEBUG, "In master stack");
-
-    int numClients = Clients[currentTag].size();
+    std::size_t numClients = Clients[currentTag].size();
     if (numClients == 0) { return; }
     if (numClients == 1)
     {
-        JMoveResizeClient(Clients[currentTag][0], usableArea.x, usableArea.y, usableArea.w, usableArea.h);
+        if (!Clients[currentTag][0].isFullScreen) 
+        {
+            JMoveResizeClient(Clients[currentTag][0], usableArea.x, usableArea.y, usableArea.w, usableArea.h);
+        }
         return;
     }
 
     Client master = Clients[currentTag][0];
-    JMoveResizeClient(master, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
+    if (!Clients[currentTag][0].isFullScreen)
+    {
+        JMoveResizeClient(master, usableArea.x, usableArea.y, usableArea.w/2, usableArea.h);
+    }
     int yGap = usableArea.h / (numClients - 1);
     int yOffSet = usableArea.y;
-    for (int i = 1; i < numClients; i++)
+    for (std::size_t i = 1; i < numClients; i++)
     {
+        if (Clients[currentTag][i].isFullScreen) { continue; }
         JMoveResizeClient(Clients[currentTag][i], usableArea.w / 2, yOffSet, usableArea.w / 2, yGap);
         yOffSet += yGap;
     }
@@ -478,21 +498,25 @@ void JXWM::Arrange() { (this->*layout)(); }
 
 void JXWM::OnWindowEnter(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnWindowEnter function");
+    if ((e.xcrossing.mode != NotifyNormal) || (e.xcrossing.detail == NotifyInferior)) { return; }
     Client* c = GetClientFromWindow(e.xcrossing.window);
-    if (c != nullptr) { FocusClient(c); }
+    FocusClient(c); 
+}
+
+void JXWM::OnWindowLeave(const XEvent& e) 
+{
+
 }
 
 void JXWM::OnUnmapNotify(const XEvent& e)
 {
-    logger.Log(DEBUG, "In unmap notify function");
+
 }
 
 void JXWM::ChangeTag(arg* arg) { ChangeTag(arg->tag); }
 
 void JXWM::ChangeTag(int tagToChange)
 {
-    logger.Log(DEBUG, "In ChangeTag Function");
 
     if (currentTag == tagToChange) { return; }
 
@@ -501,18 +525,16 @@ void JXWM::ChangeTag(int tagToChange)
     for (auto c: Clients[currentTag]) { XMapWindow(disp, c.window); }
 
     logger.Log(INFO, "Changed to tag " + std::to_string(currentTag)); 
-    XChangeProperty(disp, root, atoms[NET_CURRENT_DESKTOP], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
+    XChangeProperty(disp, root, netAtoms[NET_CURRENT_DESKTOP], XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&currentTag, 1);
     Arrange();
 }
 
 void JXWM::OnCreateNotify(const XEvent& e)
 {
-    logger.Log(DEBUG, "In OnCreateNotifyFunction");
 }
 
 void JXWM::Quit(arg* arg)
 {
-    logger.Log(DEBUG, "In Quit function");
     quit = true;
 }
 
@@ -533,7 +555,7 @@ bool JXWM::IsPager(Window w, Strut& strutsRet)
     unsigned long nItems, bytesAfter;
     long* prop = nullptr;
 
-    if (XGetWindowProperty(disp, w, atoms[NET_WM_STRUT_PARTIAL], 0, 12, False, XA_CARDINAL, &actualType, &actualFormat, &nItems, &bytesAfter, (unsigned char**)&prop) == Success && prop)
+    if (XGetWindowProperty(disp, w, netAtoms[NET_WM_STRUT_PARTIAL], 0, 12, False, XA_CARDINAL, &actualType, &actualFormat, &nItems, &bytesAfter, (unsigned char**)&prop) == Success && prop)
    {
        if (nItems == 12)
        {
@@ -557,13 +579,14 @@ void JXWM::UpdateStruts(Strut& struts)
     usableArea.w = screenArea.w - struts.left - struts.right;
     usableArea.h = screenArea.h - struts.top - struts.bottom;
     logger.Log(INFO, "Updated workable area");
+    logger.Log(DEBUG, "Old Area: (x,y,w,h)  " + std::to_string(screenArea.x) + " " + std::to_string(screenArea.y) + " " + std::to_string(screenArea.w) + " " + std::to_string(screenArea.h));
+    logger.Log(DEBUG, "New Area: (x,y,w,h)  " + std::to_string(usableArea.x) + " " + std::to_string(usableArea.y) + " " + std::to_string(usableArea.w) + " " + std::to_string(usableArea.h));
 }
 
 void JXWM::ChangeClientTag(arg* arg) { ChangeClientTag(focused, arg->tag); }
 
 void JXWM::ChangeClientTag(Client* c, int tag)
 {
-    logger.Log(DEBUG, "In ChangeClientTag Function");
     if (c == nullptr || currentTag == tag || tag < 0 || tag >= tags) { return; }
     auto& from = Clients[currentTag];
     auto& to = Clients[tag];
@@ -582,7 +605,7 @@ void JXWM::ChangeClientTag(Client* c, int tag)
 
 int JXWM::JMoveResizeClient(Client& c, int x, int y, uint w, uint h)
 {
-    return XMoveResizeWindow(disp, c.window, x + settings.borderWidth, y + settings.borderWidth, w - (4*settings.borderWidth), h - (4*settings.borderWidth));
+    return XMoveResizeWindow(disp, c.window, x, y, w - (2 * settings.borderWidth), h - (2 * settings.borderWidth));
 }
 
 void JXWM::MoveClientLeft(arg* arg) { MoveClient(focused, -1); }
@@ -591,7 +614,6 @@ void JXWM::MoveClientRight(arg* arg) { MoveClient(focused, 1); }
 
 void JXWM::MoveClient(Client* c, int amount)
 {
-    logger.Log(DEBUG, "In MoveClient function");
     if (c == nullptr || Clients[currentTag].size() <= 1) { return; }
     int idx;
     for (auto i = 0; i < Clients[currentTag].size(); i++)
@@ -623,22 +645,48 @@ int JXWM::GetClientTag(Client* c)
 
 void JXWM::FullscreenClient(Client* c, bool toggle)
 {
+    if ((c == nullptr) || (c->isFullScreen == toggle)) { return; }
     c->isFullScreen = toggle;
     if (c->isFullScreen)
     {
-        XSetWindowBorderWidth(disp, c->window, 0);
         XWindowAttributes xwa;
         XGetWindowAttributes(disp, c->window, &xwa);
         c->og.x = xwa.x;
         c->og.y = xwa.y;
         c->og.w = xwa.width;
         c->og.h = xwa.height;
+        XSetWindowBorderWidth(disp, c->window, 0);
         XMoveResizeWindow(disp, c->window, screenArea.x, screenArea.y, screenArea.w, screenArea.h);
-        XRaiseWindow(disp, c->window);
+        XChangeProperty(disp, c->window, netAtoms[NET_WM_STATE], XA_ATOM, 32, PropModeReplace, (unsigned char*)&netAtoms[NET_WM_STATE_FULLSCREEN], 1);
+        FocusClient(c);
     }
     else 
     {
         XSetWindowBorderWidth(disp, c->window, settings.borderWidth);
         XMoveResizeWindow(disp, c->window, c->og.x, c->og.y, c->og.w, c->og.h);
+        XDeleteProperty(disp, c->window, netAtoms[NET_WM_STATE]);
     }
+}
+
+void JXWM::UpdateClientList()
+{
+    std::vector<Window> cList;
+    for (auto tag: Clients)
+    {
+        for (auto client: tag) 
+        {
+            cList.push_back(client.window);
+        }
+    }
+    Window* clientList = cList.data();
+    XChangeProperty(disp, root, netAtoms[NET_CLIENT_LIST], XA_WINDOW, 32, PropModeReplace, (unsigned char *)clientList, cList.size());
+}
+
+void JXWM::OnPropertyNotify(const XEvent& e)
+{
+    XPropertyEvent xpe = e.xproperty;
+    if (xpe.window == root) { return; } 
+    Client* c = GetClientFromWindow(xpe.window);
+    //std::string name = (!c) ? "Unknown Client" : c->title;
+    //logger.Log(INFO, "Got property notification: " + std::string(XGetAtomName(disp, xpe.atom)) + " from client " + name);
 }

@@ -21,6 +21,7 @@ typedef struct Client
 {
     Window window;
     bool isFullScreen;
+    char* title;
     Rect og;
 } Client;
 
@@ -34,7 +35,7 @@ typedef struct
 
 typedef union
 {
-    const char* spawn; //wish to make this a std::string if possible
+    const char* spawn; 
     int tag;
 } arg;
 
@@ -58,6 +59,7 @@ public:
 private:
     Logger logger;
     Window root;
+    Window wmCheck;
     Display* disp;
     int screenum;
     Settings settings; 
@@ -101,7 +103,9 @@ private:
     void OnClientMessage(const XEvent& e);
     void OnDestroyNotify(const XEvent& e);
     void OnWindowEnter(const XEvent& e);
+    void OnWindowLeave(const XEvent& e);
     void OnCreateNotify(const XEvent& e);
+    void OnPropertyNotify(const XEvent& e);
 
     const char* EventToString(int event);
 
@@ -126,22 +130,34 @@ private:
     enum 
     { 
         WM_DELETE_WINDOW, 
-        WM_PROTOCOLS, 
+        WM_PROTOCOLS,
+        WM_STATE,
+        UTF8_STRING,
+        NUM_WM_ATOMS
+    };
+
+    enum 
+    {
         NET_SUPPORTED, 
         NET_ACTIVE_WINDOW, 
+        NET_CLIENT_LIST,
         NET_NUMBER_OF_DESKTOPS, 
         NET_CURRENT_DESKTOP, 
         NET_CLOSE_WINDOW, 
         NET_WM_STRUT_PARTIAL, 
         NET_WM_STATE,
         NET_WM_STATE_FULLSCREEN,
-        NUM_ATOMS
+        NET_SUPPORTING_WM_CHECK,
+        NET_WM_NAME,
+        NUM_NET_ATOMS
     };
 
-    Atom atoms[NUM_ATOMS];
+    Atom wmAtoms[NUM_WM_ATOMS];
+    Atom netAtoms[NUM_NET_ATOMS];
 
     bool IsPager(Window w, Strut& strutsRet);
     void UpdateStruts(Strut& struts);
+    void UpdateClientList();
     void Arrange();
     void (JXWM::*layout)(void);
     void SetWindowLayout(void(JXWM::*func)(void));
